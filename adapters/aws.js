@@ -255,7 +255,7 @@ adapter.prototype._ensureKey = function(vm) {
 			]
 		}, function (err, response) {
 			function upload(callback) {
-				console.log("Uploading SSH key '" + vm.keyId + "' to AWS.".magenta);
+				console.log(("Uploading SSH key '" + vm.keyId + "' to AWS.").magenta);
 				return self._api.ec2.importKeyPair({
 					KeyName: vm.keyId,
 					PublicKeyMaterial: new Buffer(vm.keyPub).toString("base64")
@@ -284,7 +284,7 @@ adapter.prototype._ensureKey = function(vm) {
 adapter.prototype._removeKey = function(vm) {
 	var self = this;
 	if (!self._keyId) return Q.resolve();
-	console.log(("Removing SSH key '" + vm.keyId + "' from Digital Ocean.").magenta);
+	console.log(("Removing SSH key '" + vm.keyId + "' from AWS.").magenta);
 	return Q.denodeify(function (callback) {
 		return self._api.ec2.deleteKeyPair({
 			KeyName: vm.keyId
