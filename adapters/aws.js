@@ -47,6 +47,11 @@ adapter.prototype.ensure = function(vm) {
 
 	return self._getByName(vm.name).then(function(vmInfo) {
 		if (vmInfo) {
+			if (!vmInfo['ip']) {
+				return self._start(vm, vmInfo).then(function(vmInfo) {
+					return vmInfo;
+				});
+			}
 			return vmInfo;
 		}
 		return self._create(vm).then(function(vmInfo) {
@@ -90,6 +95,9 @@ adapter.prototype._getByName = function(name) {
 				};
 			}
 			if (response.Reservations[0].Instances[0].State.Name === "running") {
+				return callback(null, formatInfo(response.Reservations[0].Instances[0]));
+			}
+			if (response.Reservations[0].Instances[0].State.Name === "stopped") {
 				return callback(null, formatInfo(response.Reservations[0].Instances[0]));
 			}
 			var instanceId = response.Reservations[0].Instances[0].InstanceId;
@@ -296,7 +304,7 @@ adapter.prototype._removeKey = function(vm) {
 	})();
 }
 
-adapter.prototype._create = function(vm, pio) {
+adapter.prototype._create = function(vm) {
 	var self = this;
 	return self._ensureSecurityGroup(vm).then(function() {
 		return self._ensureKey(vm).then(function() {
@@ -358,6 +366,50 @@ adapter.prototype._create = function(vm, pio) {
 			})();
 	    });
 	}).then(function() {
+		return self._getByName(vm.name);
+	});
+}
+
+
+adapter.prototype._start = function(vm, vmInfo) {
+	var self = this;
+	console.log(("Starting AWS EC2 instance with name: " + vm.name).magenta);
+	return Q.denodeify(function (callback) {
+		return self._api.ec2.startInstances({
+			InstanceIds: [
+				vmInfo._raw.InstanceId
+			]
+		}, function (err, response) {
+			if (err) return callback(err);
+			if (!response.StartingInstances || response.StartingInstances.length !== 1) {
+				return callback(new Error("Unexpected response: " + JSON.stringify(response)));
+			}
+			var instanceId = response.StartingInstances[0].InstanceId;
+			function waitUntilReady(callback) {
+				return self._api.ec2.describeInstances({
+					InstanceIds: [
+						instanceId
+					]
+				}, function (err, response) {
+					if (err) return callback(err);
+					if (
+						response.Reservations.length !== 1 ||
+						response.Reservations[0].Instances.length !== 1
+					) {
+						return callback(new Error("Unexpected status response: " + JSON.stringify(response)));
+					}
+					if (response.Reservations[0].Instances[0].State.Name === "running") {
+						return callback(null);
+					}
+					console.log("Waiting for vm to boot ...");
+					return setTimeout(function() {
+						return waitUntilReady(callback);
+					}, 5 * 1000);
+				});
+			}
+			return waitUntilReady(callback);
+		});
+	})().then(function() {
 		return self._getByName(vm.name);
 	});
 }

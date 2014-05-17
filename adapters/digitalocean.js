@@ -131,7 +131,7 @@ adapter.prototype._removeKey = function(vm) {
 	});
 }
 
-adapter.prototype._create = function(vm, pio) {
+adapter.prototype._create = function(vm) {
 	var self = this;
 	return self._api.sizeGetAll().then(function(sizes) {
 		return self._api.imageGetGlobal().then(function(images) {
