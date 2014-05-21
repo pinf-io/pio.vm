@@ -164,7 +164,7 @@ adapter.prototype._create = function(vm) {
 					private_networking: false,
 					backups_enabled: false
 				};
-				console.log(("Creating new Digital Ocean droplet with name: " + name).magenta);
+				console.log(("Creating new Digital Ocean droplet with name: " + name + " and info: " + JSON.stringify([name, sizeId, imageId, regionId, optionals], null, 4)).magenta);
 				return self._api.dropletNew(name, sizeId, imageId, regionId, optionals).then(function(droplet) {
 					if (!droplet) {
 						throw new Error("Error creating droplet! Likely due to Digital Ocean API being down.");
