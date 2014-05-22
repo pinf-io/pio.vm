@@ -135,17 +135,24 @@ adapter.prototype._create = function(vm) {
 	var self = this;
 	return self._api.sizeGetAll().then(function(sizes) {
 		return self._api.imageGetGlobal().then(function(images) {
+			console.log("self._settings", self._settings);
+			self._settings.distribution = self._settings.distribution || "Ubuntu";
+			self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+13.+x64";
+			console.log("self._settings", self._settings);
+			console.log("Available images:");
 			images = images.filter(function(image) {
-				if (image.distribution !== "Ubuntu") return false;
-				if (!/docker/i.test(image.name)) return false;
+				console.log("  " + image.distribution + " - " + image.name + " (" + image.id + ")");
+				if (image.distribution !== self._settings.distribution) return false;
+				if (!new RegExp(self._settings.imageName).exec(image.name)) return false;
 				return true;
 			});
 			if (images.length === 0) {
-				throw new Error("No image found!");
+				throw new Error("No image found!", images, self._settings);
 			}
 			if (images.length > 1) {
-				console.log("WARN: Found more than 1 image:", images);
+				console.log("WARN: Found more than 1 image:", images, self._settings);
 			}
+			console.log("Chosen image: " + JSON.stringify(images[0]));
 			return self._ensureKey(vm).then(function() {
 				var name = vm.name;
 				var sizeId = sizes.filter(function(size) {
