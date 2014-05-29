@@ -50,6 +50,20 @@ adapter.prototype.ensure = function(vm) {
 	});
 }
 
+adapter.prototype.terminate = function(vm) {
+	var self = this;
+
+	return self._getByName(vm.name).then(function(vmInfo) {
+		if (vmInfo) {
+			console.log(("Terminating: " + JSON.stringify(vmInfo, null, 4)).magenta);
+			return self._api.dropletDestroy(vmInfo._raw.id).then(function(eventId) {
+				// TODO: Optionally wait until destroyed?
+			});
+		}
+		return Q.reject("VM with name '" + vm.name + "' not found!");
+	});
+}
+
 adapter.prototype._getByName = function(name) {
 	var self = this;
 	return self._api.dropletGetAll().then(function(droplets) {

@@ -82,6 +82,12 @@ exports.ensure = function(pio, state) {
 	    		return;
 			}
 
+			if (state["pio.vm"] && state["pio.vm"].skip && state["pio.vm"].skip.indexOf("provision") !== -1) {
+				// We are being asked to skip VM provisioning.
+				console.log("Skip VM provisioning");
+				return;
+			}
+
 			var vm = {
 				name: pio.getConfig("config")["pio.vm"].name,
 				keyId: pio.getConfig("config")["pio.vm"].keyId,

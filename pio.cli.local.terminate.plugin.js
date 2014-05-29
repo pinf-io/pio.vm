@@ -12,6 +12,14 @@ exports.terminate = function(pio, state) {
 
 	return pio.API.Q.fcall(function() {
 
+		if (!state["pio.cli.local"].ip) {
+			throw "state['pio.cli.local'].ip not set!";
+		}
+
+		if (state["pio.cli.local"].ip !== pio.getConfig("config")["pio.vm"].ip) {
+			throw "state['pio.cli.local'].ip != config['pio.vm'].ip";
+		}
+
 		if (!pio.getConfig("config")["pio.vm"].adapter) {
 			throw "config['pio.vm'].adapter not set!";
 		}
@@ -54,7 +62,19 @@ exports.terminate = function(pio, state) {
 		}
 
 		return terminateWithAdapter(adapterName, adapterSettings).then(function(_state) {
-			response = DEEPMERGE(response, _state);
+
+			// If instance ID is bumeric, increment it.
+			if ((""+parseInt(pio._state["pio"].instance)) === (""+pio._state["pio"].instance)) {
+				console.log(("Incrementing 'config.pio.instance' with current value '" + pio._state["pio"].instance + "'").magenta);
+				pio._state["pio"].instance = ""+(parseInt(pio._state["pio"].instance) + 1);
+				pio._updateWorkspaceProfile({
+					"config": {
+						"pio": {
+							"instance": pio._state["pio"].instance
+						}
+					}
+				});
+			}
 
 			return pio._setRuntimeConfig({});
 		});
