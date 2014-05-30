@@ -7,6 +7,7 @@ const DEEPMERGE = require("deepmerge");
 const REQUEST = require("request");
 const WAITFOR = require("waitfor");
 
+// http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/frames.html
 
 var adapter = exports.adapter = function(settings) {
 
@@ -57,6 +58,32 @@ adapter.prototype.ensure = function(vm) {
 		return self._create(vm).then(function(vmInfo) {
 			return vmInfo;
 		});
+	});
+}
+
+adapter.prototype.terminate = function(vm) {
+	var self = this;
+
+	return self._getByName(vm.name).then(function(vmInfo) {
+		if (vmInfo) {
+			console.log(("Terminating: " + JSON.stringify(vmInfo, null, 4)).magenta);
+
+			return Q.denodeify(function (callback) {
+				return self._api.ec2.terminateInstances({
+					InstanceIds: [
+						vmInfo._raw.InstanceId
+					]
+				}, function (err, response) {
+					if (err) return callback(err);
+					if (!response.TerminatingInstances || response.TerminatingInstances.length === 0) {
+						return callback(new Error("Not terminating. Instance not found!"));
+					}
+					// TODO: Optionally wait until destroyed?
+					return callback(null);
+				});
+			})();
+		}
+		return Q.reject("VM with name '" + vm.name + "' not found!");
 	});
 }
 
