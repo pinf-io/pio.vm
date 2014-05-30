@@ -8,7 +8,7 @@ const FS = require("fs");
 exports.ensure = function(pio, state) {
 
 	var response = {
-		status: "unknown"
+		".status": "unknown"
 	};
 
     function isSshAvailable(ip) {
@@ -135,9 +135,9 @@ exports.ensure = function(pio, state) {
 			});
 		});
 	}).then(function() {
-		response.status = "pending";		
+		response[".status"] = "pending";		
     	if (response.sshAvailable) {
-    		response.status = "ready";
+    		response[".status"] = "ready";
     	}
     	return;
 	}).then(function() {
