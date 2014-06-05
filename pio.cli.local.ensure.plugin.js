@@ -131,7 +131,10 @@ exports.ensure = function(pio, state) {
 					});
 				}
 
-				return pio.API.Q.timeout(check(), 60 * 1000);
+				return pio.API.Q.timeout(check(), 120 * 1000).fail(function(err) {
+		    		console.error(("\nACTION: Call 'pio deploy' again!\n\n").red);
+		    		throw err;
+		    	});
 			});
 		});
 	}).then(function() {
