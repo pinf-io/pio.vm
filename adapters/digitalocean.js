@@ -151,7 +151,7 @@ adapter.prototype._create = function(vm) {
 		return self._api.imageGetGlobal().then(function(images) {
 			console.log("self._settings", self._settings);
 			self._settings.distribution = self._settings.distribution || "Ubuntu";
-			self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+13.+x64";
+			self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+14";
 			console.log("self._settings", self._settings);
 			console.log("Available images:");
 			images = images.filter(function(image) {
