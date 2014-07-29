@@ -24,6 +24,7 @@ var adapter = exports.adapter = function(settings) {
 		secretAccessKey: self._settings.secretAccessKey,
         region: self._settings.region
     });
+    console.log("Using EC2 region: " + self._settings.region);
 
 	self._api = {
 		ec2: new AWS.EC2(awsConfig)
@@ -58,6 +59,10 @@ adapter.prototype.ensure = function(vm) {
 		return self._create(vm).then(function(vmInfo) {
 			return vmInfo;
 		});
+	}).fail(function(err) {
+		err.message += " (while calling AWS API)";
+		err.stack += "\n(while calling AWS API)";
+		throw err;
 	});
 }
 
@@ -159,14 +164,54 @@ adapter.prototype._ensureSecurityGroup = function(vm) {
 	var self = this;
 	var groupName = vm.securityGroup.name;
 	function getClientPublicIP(callback) {
-	    return REQUEST({
-	    	url: "https://freegeoip.net/json/",
-	    	json: true,
-	    	strictSSL: false
-	    }, function(err, res, data) {
-	        if (err) return callback(err);
-	        console.log("Your public IP: " + data.ip);
-	        return callback(null, data.ip);
+// TODO: Enable again if we need to know.
+return callback(null, null);
+		// @see http://stackoverflow.com/a/3097641/330439
+		function lookup1(callback) {
+		    return REQUEST({
+		    	url: "https://freegeoip.net/json/",
+		    	json: true,
+		    	strictSSL: false
+		    }, function(err, res, data) {
+		        if (err) {
+		        	return callback(err);
+		        }
+		        return callback(null, data.ip);
+			});
+		}
+		function lookup2(callback) {
+		    return REQUEST({
+		    	url: "http://icanhazip.com"
+		    }, function(err, res, data) {
+		        if (err) {
+		        	return callback(err);
+		        }
+		        return callback(null, data.replace(/[\s\n]/g, ""));
+			});
+		}
+		function lookup3(callback) {
+		    return REQUEST({
+		    	url: "http://curlmyip.com"
+		    }, function(err, res, data) {
+		        if (err) {
+		        	return callback(err);
+		        }
+		        return callback(null, data.replace(/[\s\n]/g, ""));
+			});
+		}
+		function done (ip) {
+	        console.log("Your public IP: " + ip);
+	        return callback(null, ip);
+		}
+		return lookup1(function (err, ip) {
+			if (!err && ip) return done(ip);
+			return lookup2(function (err, ip) {
+				if (!err && ip) return done(ip);
+				return lookup3(function (err, ip) {
+					if (!err && ip) return done(ip);
+					return callback(new Error("Could not determine your IP!"));
+				});			
+			});			
 		});
 	}
 	return Q.denodeify(getClientPublicIP)().then(function(clientPublicIP) {
@@ -200,16 +245,11 @@ adapter.prototype._ensureSecurityGroup = function(vm) {
 								if (existing.indexOf("tcp:" + port + ":" + port + ":" + ips) === -1) {
 									console.log(("Adding unrestricted access to port " + port + " to security group '" + groupName + "' on AWS.").magenta);
 							        return self._api.ec2.authorizeSecurityGroupIngress({
-							            GroupName: groupName,
-							            IpPermissions: [
-							                {
-							                    UserIdGroupPairs: [],
-							                    IpRanges: [ { CidrIp: ips } ],
-							                    IpProtocol: "tcp",
-							                    FromPort: port,
-							                    ToPort: port
-							                }
-							            ]
+							            GroupId: self._securityGroupId,
+					                    IpProtocol: "tcp",
+					                    FromPort: port,
+					                    ToPort: port,
+					                    CidrIp: ips
 							        }, function(err, response) {
 							            if (err) return callback(err);
 							            return callback(null, records);
@@ -230,7 +270,7 @@ adapter.prototype._ensureSecurityGroup = function(vm) {
 						Description: groupName
 					}, function(err, data) {
 						if (err) return callback(err);
-						self._securityGroupId = groupName;
+						self._securityGroupId = data.GroupId;
 						return createDefaultRecords([], callback);
 					});
 				}
@@ -241,7 +281,7 @@ adapter.prototype._ensureSecurityGroup = function(vm) {
 					return callback(err);
 				} else
 				if (data.SecurityGroups && data.SecurityGroups.length === 1 && data.SecurityGroups[0].GroupName === groupName) {
-					self._securityGroupId = groupName;
+					self._securityGroupId = data.SecurityGroups[0].GroupId;
 					console.log("Verified that security group '" + groupName + "' is configured on AWS.");
 					return createDefaultRecords(data.SecurityGroups[0].IpPermissions, callback);
 				}
@@ -283,6 +323,7 @@ adapter.prototype._ensureSecurityGroup = function(vm) {
 
 adapter.prototype._ensureKey = function(vm) {
 	var self = this;
+	console.log("ensureKey()");
 	return Q.denodeify(function (callback) {
 		return self._api.ec2.describeKeyPairs({
 			KeyNames: [
@@ -290,10 +331,10 @@ adapter.prototype._ensureKey = function(vm) {
 			]
 		}, function (err, response) {
 			function upload(callback) {
-				console.log(("Uploading SSH key '" + vm.keyId + "' to AWS.").magenta);
+				console.log(("Uploading SSH key '" + vm.keyId + "' to AWS: " + vm.keyPub).magenta);
 				return self._api.ec2.importKeyPair({
 					KeyName: vm.keyId,
-					PublicKeyMaterial: new Buffer(vm.keyPub).toString("base64")
+					PublicKeyMaterial: vm.keyPub
 				}, function (err, response) {
 					if (err) return callback(err);
 					self._keyId = vm.keyId;
@@ -342,7 +383,7 @@ adapter.prototype._create = function(vm) {
 					MinCount: 1,
 					MaxCount: 1,
 					KeyName: self._keyId,
-					SecurityGroups: [
+					SecurityGroupIds: [
 						self._securityGroupId
 					],
 					InstanceType: vm.InstanceType,
