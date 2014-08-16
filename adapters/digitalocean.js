@@ -2,7 +2,7 @@
 const ASSERT = require("assert");
 const CRYPTO = require("crypto");
 const Q = require("q");
-const DIGIO = require("digitalocean-api");
+const DO = require("do-wrapper");
 const DEEPMERGE = require("deepmerge");
 const WAITFOR = require("waitfor");
 
@@ -16,10 +16,10 @@ var adapter = exports.adapter = function(settings) {
 
 	self._settings = settings;
 
-	ASSERT.equal(typeof self._settings.clientId, "string");
-	ASSERT.equal(typeof self._settings.apiKey, "string");
+	ASSERT.equal(typeof self._settings.token, "string");
+	ASSERT.equal(typeof self._settings.tokenName, "string");
 
-	var api = new DIGIO(self._settings.clientId, self._settings.apiKey);
+	var api = new DO(self._settings.token, 250);
 	self._api = {};
 	for (var name in api) {
 		if (typeof api[name] === "function") {
@@ -56,7 +56,7 @@ adapter.prototype.terminate = function(vm) {
 	return self._getByName(vm.name).then(function(vmInfo) {
 		if (vmInfo) {
 			console.log(("Terminating: " + JSON.stringify(vmInfo, null, 4)).magenta);
-			return self._api.dropletDestroy(vmInfo._raw.id).then(function(eventId) {
+			return self._api.dropletsDeleteDroplet(vmInfo._raw.id).then(function(eventId) {
 				// TODO: Optionally wait until destroyed?
 			});
 		}
@@ -66,11 +66,11 @@ adapter.prototype.terminate = function(vm) {
 
 adapter.prototype._getByName = function(name) {
 	var self = this;
-	return self._api.dropletGetAll().then(function(droplets) {
+	return self._api.dropletsGetAll().then(function(droplets) {
 		if (!droplets) {
 			throw new Error("Error listing droplet! Likely due to Digital Ocean API being down.");
 		}
-		droplets = droplets.filter(function(droplet) {
+		droplets = droplets.droplets.filter(function(droplet) {
 			return (droplet.name === name);
 		});
 		if (droplets.length > 1) {
@@ -81,11 +81,21 @@ adapter.prototype._getByName = function(name) {
 		}
 		var droplet = droplets.shift();
 		function formatInfo(droplet) {
-			return {
+			var info = {
 				_raw: droplet,
-				ip: droplet.ip_address || "",
-				ipPrivate: droplet.private_ip_address || ""					
+				ip: "",
+				ipPrivate: ""
 			};
+			droplet.networks.v4.forEach(function (network) {
+				if (network.type === "public") {
+					info.ip = network.ip_address;
+				} else
+				// TODO: Verify that the type is in fact called `private`.
+				if (network.type === "private") {
+					info.ipPrivate = network.ip_address;
+				}
+			});
+			return info;
 		}
 		if (droplet.status === "active") {
 			return formatInfo(droplet);
@@ -94,7 +104,7 @@ adapter.prototype._getByName = function(name) {
 			// TODO: Ensure we can never get into an infinite loop here. i.e. Add timeout.
 			var deferred = Q.defer();
 			function check() {
-				return self._api.dropletGet(dropletId).then(function(droplet) {
+				return self._api.dropletsGetDropletById(dropletId).then(function(droplet) {
 					console.log("Waiting for vm to boot ...");
 					if (droplet.status === "active") {
 						return deferred.resolve(formatInfo(droplet));
@@ -115,13 +125,13 @@ adapter.prototype._ensureKey = function(vm) {
 		ASSERT.equal(typeof vm.keyId, "string");
 		ASSERT.equal(typeof vm.keyPub, "string");
 		var keyName = vm.keyId;
-		return self._api.sshKeyGetAll().then(function(keys) {
-			keys = keys.filter(function(key) {
+		return self._api.keysGetAll().then(function(keys) {
+			keys = keys.ssh_keys.filter(function(key) {
 				return (key.name === keyName);
 			});
 			if (keys.length === 0) {
 				console.log(("Uploading SSH key '" + keyName + "' to Digital Ocean.").magenta);
-				return self._api.sshKeyAdd(keyName, vm.keyPub).then(function(data) {
+				return self._api.keysAddNew(keyName, vm.keyPub).then(function(data) {
 					self._keyId = data.id;
 					return;
 				});
@@ -139,7 +149,7 @@ adapter.prototype._removeKey = function(vm) {
 	//       In which case we need to fetch `self._keyId` first.
 	if (!self._keyId) return Q.resolve();
 	console.log(("Removing SSH key '" + vm.keyId + "' from Digital Ocean.").magenta);
-	return self._api.sshKeyDestroy(self._keyId).then(function() {
+	return self._api.keysDestroyKey(self._keyId).then(function() {
 		self._keyId = null;
 		return;
 	});
@@ -147,67 +157,95 @@ adapter.prototype._removeKey = function(vm) {
 
 adapter.prototype._create = function(vm) {
 	var self = this;
-	return self._api.sizeGetAll().then(function(sizes) {
-		return self._api.imageGetGlobal().then(function(images) {
-			console.log("self._settings", self._settings);
-			self._settings.distribution = self._settings.distribution || "Ubuntu";
-			self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+14";
-			console.log("self._settings", self._settings);
-			console.log("Available images:");
-			images = images.filter(function(image) {
-				console.log("  " + image.distribution + " - " + image.name + " (" + image.id + ")");
-				if (image.distribution !== self._settings.distribution) return false;
-				if (!new RegExp(self._settings.imageName).exec(image.name)) return false;
-				return true;
-			});
-			if (images.length === 0) {
-				throw new Error("No image found!", images, self._settings);
-			}
-			if (images.length > 1) {
-				console.log("WARN: Found more than 1 image:", images, self._settings);
-			}
-			console.log("Chosen image: " + JSON.stringify(images[0]));
-			return self._ensureKey(vm).then(function() {
-				var name = vm.name;
-				var sizeId = sizes.filter(function(size) {
-					if (size.slug == vm.size) return true;
-					return false;
+	return self._api.sizesGetAll().then(function(sizes) {
+		return self._api.imagesGetAll().then(function(images) {
+			return self._api.regionsGetAll().then(function(regions) {
+				console.log("regions", regions);
+				console.log("sizes", sizes);
+				console.log("self._settings", self._settings);
+				self._settings.distribution = self._settings.distribution || "Ubuntu";
+				self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+14";
+				console.log("self._settings", self._settings);
+				console.log("Available images:");
+				images = images.images.filter(function(image) {
+					console.log("  " + image.distribution + " - " + image.name + " (" + image.id + ")");
+					if (image.distribution !== self._settings.distribution) return false;
+					if (!new RegExp(self._settings.imageName).exec(image.name)) return false;
+					return true;
 				});
-				if (sizeId.length === 0) {
-					console.log("sizes", sizes);
-					throw new Error("Could not find size '" + vm.size + "' for slug value in sizes above!");
+				if (images.length === 0) {
+					throw new Error("No image found!", images, self._settings);
 				}
-				sizeId = sizeId.shift().id;
-				var imageId = images[0].id;
-				var regionId = 3;		// San Francisco 1
-				var optionals = {
-					ssh_key_ids: self._keyId,
-					private_networking: false,
-					backups_enabled: false
-				};
-				console.log(("Creating new Digital Ocean droplet with name: " + name + " and info: " + JSON.stringify([name, sizeId, imageId, regionId, optionals], null, 4)).magenta);
-				return self._api.dropletNew(name, sizeId, imageId, regionId, optionals).then(function(droplet) {
-					if (!droplet) {
-						throw new Error("Error creating droplet! Likely due to Digital Ocean API being down.");
-					}
-					function waitUntilReady(eventId) {
-						// TODO: Ensure we can never get into an infinite loop here. i.e. Add timeout.
-						var deferred = Q.defer();
-						function check() {
-							self._api.eventGet(eventId).then(function(event) {
-								
-								console.log("Waiting for vm to boot ...", (event.percentage || 0), "%");
+				if (images.length > 1) {
+					console.log("WARN: Found more than 1 image:", images, self._settings);
+				}
+				console.log("Chosen image: " + JSON.stringify(images[0]));
+				return self._ensureKey(vm).then(function() {
+					var name = vm.name;
 
-								if (event.action_status === "done") {
-									return deferred.resolve();
-								}
-								setTimeout(check, 10 * 1000);
-							}).fail(deferred.reject);
-						}
-						check();
-						return deferred.promise;
+					// TODO: Move into default config.
+					vm.region = vm.region || "sfo1";
+
+					var regionId = regions.regions.filter(function(region) {
+						if (region.slug == vm.region) return true;
+						return false;
+					});
+					if (regionId.length === 0) {
+						console.log("regions", regions);
+						throw new Error("Could not find region '" + vm.region + "' for slug value in regions above!");
 					}
-					return waitUntilReady(droplet.event_id);
+					regionId = regionId.shift().slug;
+
+					var sizeId = sizes.sizes.filter(function(size) {
+						if (size.slug == vm.size) return true;
+						return false;
+					});
+					if (sizeId.length === 0) {
+						console.log("sizes", sizes);
+						throw new Error("Could not find size '" + vm.size + "' for slug value in sizes above!");
+					}
+					sizeId = sizeId.shift();
+					if (sizeId.regions.indexOf(regionId) === -1) {
+						throw new Error("Size '" + vm.size + "' is not supported by region '" + vm.region + "'!");
+					}
+					sizeId = sizeId.slug;
+
+					var imageId = images[0].id;
+					var optionals = {
+						ssh_keys: [
+							self._keyId
+						],
+						private_networking: false,
+						backups: false,
+						ipv6: false
+					};
+					console.log(("Creating new Digital Ocean droplet with name: " + name + " and info " + JSON.stringify([name, regionId, sizeId, imageId, optionals], null, 4) + " using token '" + self._settings.tokenName + "'").magenta);
+					return self._api.dropletsCreateNewDroplet(name, regionId, sizeId, imageId, optionals).then(function(droplet) {
+						if (!droplet) {
+							throw new Error("Error creating droplet! Likely due to Digital Ocean API being down.");
+						}
+						function waitUntilReady(dropletId, actionId) {
+							// TODO: Ensure we can never get into an infinite loop here. i.e. Add timeout.
+							var deferred = Q.defer();
+							function check() {
+								self._api.dropletActionGetStatus(dropletId, actionId).then(function (action) {
+
+									console.log("Waiting for vm to boot ...");
+
+									if (action.action.status === "completed") {
+										return deferred.resolve();
+									}
+									setTimeout(check, 10 * 1000);
+								}).fail(deferred.reject);
+							}
+							check();
+							return deferred.promise;
+						}
+						if (droplet.id === "unprocessable_entity") {
+							throw new Error("Error creating dropplet: " + JSON.stringify(droplet));
+						}
+						return waitUntilReady(droplet.droplet.id, droplet.links.actions[0].id);
+					});
 				});
 			});
 		});

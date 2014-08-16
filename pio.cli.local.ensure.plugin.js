@@ -98,10 +98,15 @@ exports.ensure = function(pio, state) {
 			console.log(("Creating VM: " + JSON.stringify(vm, null, 4)).magenta);
 
 			function ensureWithAdapter(name, settings) {
-				// TODO: Use `require.async`.
-				var adapter = require("./adapters/" + name);
-				var adapter = new adapter.adapter(settings);
-				console.log(("Creating VM using adapter: " + name).magenta);
+				try {
+					// TODO: Use `require.async`.
+					var adapter = require("./adapters/" + name);
+					var adapter = new adapter.adapter(settings);
+					console.log(("Creating VM using adapter: " + name).magenta);
+				} catch (err) {
+					console.log("settings", settings);
+					throw err;
+				}
 				return adapter.ensure(DEEPMERGE(settings, vm));
 			}
 
