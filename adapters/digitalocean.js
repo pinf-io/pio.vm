@@ -132,7 +132,7 @@ adapter.prototype._ensureKey = function(vm) {
 			if (keys.length === 0) {
 				console.log(("Uploading SSH key '" + keyName + "' to Digital Ocean.").magenta);
 				return self._api.keysAddNew(keyName, vm.keyPub).then(function(data) {
-					self._keyId = data.id;
+					self._keyId = data.ssh_key.id;
 					return;
 				});
 			}
@@ -181,6 +181,11 @@ adapter.prototype._create = function(vm) {
 				}
 				console.log("Chosen image: " + JSON.stringify(images[0]));
 				return self._ensureKey(vm).then(function() {
+
+					if (!self._keyId) {
+						throw new Error("'self._keyId' not set!");
+					}
+
 					var name = vm.name;
 
 					// TODO: Move into default config.
