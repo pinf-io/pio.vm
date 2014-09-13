@@ -26,7 +26,15 @@ var adapter = exports.adapter = function(settings) {
 			(function inject(name) {
 				self._api[name] = function() {
 					var args = Array.prototype.slice.call(arguments, 0);
-					return Q.nbind(api[name], api).apply(api, args);
+					return Q.nbind(api[name], api).apply(api, args).then(function (data) {
+						if (!data) {
+							throw new Error("No data for call '" + name + "'");
+						}
+						if (data.id === "unauthorized") {
+							throw new Error("Error: " + JSON.stringify(data, null, 4));
+						}
+						return data;
+					});
 				}
 			})(name);
 		}
@@ -70,6 +78,7 @@ adapter.prototype._getByName = function(name) {
 		if (!droplets) {
 			throw new Error("Error listing droplet! Likely due to Digital Ocean API being down.");
 		}
+console.log("droplets", droplets);		
 		droplets = droplets.droplets.filter(function(droplet) {
 			return (droplet.name === name);
 		});
