@@ -95,14 +95,14 @@ exports.ensure = function(pio, state) {
 				securityGroup: pio.getConfig("config")["pio.vm"].securityGroup
 			};
 
-			console.log(("Creating VM: " + JSON.stringify(vm, null, 4)).magenta);
+			console.log(("Ensuring VM: " + JSON.stringify(vm, null, 4)).magenta);
 
 			function ensureWithAdapter(name, settings) {
 				try {
 					// TODO: Use `require.async`.
 					var adapter = require("./adapters/" + name);
 					var adapter = new adapter.adapter(settings);
-					console.log(("Creating VM using adapter: " + name).magenta);
+					console.log(("Ensuring VM using adapter: " + name).magenta);
 				} catch (err) {
 					console.log("settings", settings);
 					throw err;
@@ -115,6 +115,9 @@ exports.ensure = function(pio, state) {
 
 				return pio._setRuntimeConfig({
 					config: {
+						"pio": {
+							hostname: pio.getConfig("config")["pio"].hostname
+						},
 						"pio.vm": {
 							ip: response.ip
 						}
