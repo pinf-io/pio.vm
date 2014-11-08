@@ -258,6 +258,9 @@ adapter.prototype._create = function(vm) {
 						if (droplet.id === "unprocessable_entity") {
 							throw new Error("Error creating dropplet: " + JSON.stringify(droplet));
 						}
+						if (droplet.id === "forbidden") {
+							throw new Error("Error creating dropplet: " + droplet.message);
+						}
 						return waitUntilReady(droplet.droplet.id, droplet.links.actions[0].id);
 					});
 				});
