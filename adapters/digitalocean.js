@@ -173,7 +173,7 @@ adapter.prototype._create = function(vm) {
 				console.log("sizes", sizes);
 				console.log("self._settings", self._settings);
 				self._settings.distribution = self._settings.distribution || "Ubuntu";
-				self._settings.imageName = self._settings.imageName || "Docker.+Ubuntu.+14";
+				self._settings.imageName = self._settings.imageName || "Docker.+on 14";
 				console.log("self._settings", self._settings);
 				console.log("Available images:");
 				images = images.images.filter(function(image) {
